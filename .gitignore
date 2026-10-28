@@ -1,0 +1,33 @@
+# Gradle / Android
+.gradle/
+**/build/
+local.properties
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Binaries & archives
+*.apk
+*.aab
+*.ap_
+*.dex
+*.idsig
+*.tgz
+*.zip
+
+# Temp / debug dumps
+.tmp*/
+.tmp-*
+spec_now*.png
+
+# OS / editor
+.DS_Store
+*~
+
+# Large local-only assets (optional keep in git history later)
+screenshots/
+artifacts/
+*.aar
+.agents/

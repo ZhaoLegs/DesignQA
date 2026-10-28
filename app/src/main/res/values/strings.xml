@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Spec</string>
+    <string name="a11y_desc">Spec：读取当前界面的控件结构与截图，用于测量间距、尺寸、字号和取色。不会收集或上传任何数据。</string>
+</resources>
