@@ -127,7 +127,6 @@ class FitTextView(ctx: android.content.Context, private val txt: String, private
         val avail = height * 0.96f
         if (b.height() > avail) { p.textSize = sizePx * avail / b.height(); p.getTextBounds(txt, 0, txt.length, b) }
         val y = (height - b.height()) / 2f - b.top
-        android.util.Log.d("FitTV", "h=$height b=$b size=${p.textSize} y=$y")
         c.drawText(txt, paddingLeft.toFloat(), y, p)
     }
 }
