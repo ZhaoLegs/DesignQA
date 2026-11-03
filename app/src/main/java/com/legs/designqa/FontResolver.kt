@@ -57,8 +57,10 @@ object FontResolver {
         return (main + extra).distinctBy { it.script + it.family }.joinToString(" · ") { "${it.script} ${it.family}" }
     }
 
+    @android.annotation.TargetApi(29)
     private fun key(f: Font): String = (f.file?.path ?: ("buf" + System.identityHashCode(f.buffer))) + "#" + f.ttcIndex
 
+    @android.annotation.TargetApi(29)
     private fun nameOf(f: Font): Pair<String, String> = nameCache.getOrPut(key(f)) {
         runCatching { parseName(f.buffer.duplicate(), f.ttcIndex) }.getOrNull()
             ?: ((f.file?.nameWithoutExtension ?: "未知字体") to "")

@@ -6,50 +6,59 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AnnotationOptionsTest {
+    @Test fun allEightTypesCanBeEnabledAndDisabledIndependently() {
+        val types = listOf("size", "space", "font", "family", "color", "bounds", "radius", "stroke")
+        var options = AnnotationOptions.from(null, emptySet())
+        types.filterNot { options.isOn(it) }.forEach { options = options.toggle(it) }
+        assertTrue(types.all { options.isOn(it) })
+        assertEquals(options, options.toggle("unknown"))
+        types.forEach { key ->
+            options = options.toggle(key)
+            assertFalse(options.isOn(key))
+        }
+        assertTrue(types.none { options.isOn(it) })
+    }
     @Test fun defaultsToSizeWhenNoValidPrimaryTypeWasSaved() {
-        assertEquals("size", AnnotationOptions.from(null, emptySet()).primary)
-        assertEquals("size", AnnotationOptions.from("grid", emptySet()).primary)
+        assertTrue(AnnotationOptions.from(null, emptySet()).isOn("size"))
+        assertTrue(AnnotationOptions.from("grid", emptySet()).isOn("size"))
     }
 
-    @Test fun selectingPrimaryTypeReplacesThePreviousType() {
+    @Test fun enablingAnotherTypeKeepsThePreviousType() {
         val options = AnnotationOptions.from("size", setOf("grid")).toggle("color")
 
-        assertEquals("color", options.primary)
         assertTrue(options.isOn("color"))
-        assertFalse(options.isOn("size"))
+        assertTrue(options.isOn("size"))
         assertTrue(options.isOn("grid"))
     }
 
-    @Test fun selectingTheActivePrimaryTypeKeepsItEnabled() {
+    @Test fun selectingTheActiveTypeDisablesIt() {
         val options = AnnotationOptions.from("font", emptySet()).toggle("font")
 
-        assertEquals("font", options.primary)
-        assertTrue(options.isOn("font"))
+        assertFalse(options.isOn("font"))
     }
 
     @Test fun auxiliaryLayersToggleIndependently() {
         val enabled = AnnotationOptions.from("space", setOf("bounds")).toggle("grid")
         val disabled = enabled.toggle("bounds")
 
-        assertEquals("space", disabled.primary)
         assertTrue(disabled.isOn("grid"))
         assertFalse(disabled.isOn("bounds"))
         assertTrue(disabled.isOn("space"))
     }
 
-    @Test fun radiusIsASelectablePrimaryType() {
+    @Test fun radiusCanCoexistWithSize() {
         val options = AnnotationOptions.from("size", emptySet()).toggle("radius")
 
-        assertEquals("radius", options.primary)
         assertTrue(options.isOn("radius"))
+        assertTrue(options.isOn("size"))
     }
 
-    @Test fun typefaceIsASelectablePrimaryType() {
+    @Test fun legacyTypefaceMapsToFamilyAndCoexistsWithFont() {
         val options = AnnotationOptions.from("font", emptySet()).toggle("typeface")
 
-        assertEquals("typeface", options.primary)
         assertTrue(options.isOn("typeface"))
-        assertFalse(options.isOn("font"))
+        assertTrue(options.isOn("family"))
+        assertTrue(options.isOn("font"))
     }
 
     @Test fun overlaysAreHiddenWhileTheKeyguardIsLocked() {

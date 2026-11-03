@@ -50,6 +50,14 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
     var mode = Mode.NONE
     var hideForCapture = false
     var shot: Bitmap? = null
+        set(value) {
+            if (field === value) return
+            val previous = field
+            field = value
+            previous?.recycle()
+            colorCache.clear(); shapeCache.clear(); weightCache.clear()
+            layoutKey = null
+        }
     var allBounds: List<Rect>? = null
     var annots: List<NodeData>? = null
     /** 全屏标注滚动中：暂时隐藏，停止滚动后由 QaService 刷新再显示 */
@@ -335,14 +343,16 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
 
     private fun pxPt(px: Float) = (px / d).let { if (abs(it - it.roundToInt()) < 0.05f) "${it.roundToInt()}" else "%.1f".format(it) }
 
-    private val runsCache = HashMap<String, List<FontResolver.Run>>()
+    private val runsCache = object : LinkedHashMap<Triple<Int, Float, String>, List<FontResolver.Run>>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Triple<Int, Float, String>, List<FontResolver.Run>>?) = size > 128
+    }
     /** Fonts that actually render this node's text: from Spec Inspector when integrated, else shaped here with the system default typeface. */
     private fun runsOf(a: NodeData): List<FontResolver.Run> {
         a.exact?.fonts?.takeIf { it.isNotEmpty() }?.let { return it }
         val txt = a.text?.takeIf { it.isNotBlank() && a.fontSp != null } ?: return emptyList()
         val w = a.exact?.weight ?: weightOf(a).takeIf { it > 0 } ?: 400
         val px = a.exact?.sizePx ?: (a.fontSp!! * d * svc.resources.configuration.fontScale)
-        val key = "$w|${px.toInt()}|" + txt.take(64)
+        val key = Triple(w, px, txt)
         return runsCache.getOrPut(key) {
             runCatching { FontResolver.resolve(txt, Paint().apply { textSize = px; typeface = Typeface.create(Typeface.DEFAULT, w, false) }) }.getOrNull() ?: emptyList()
         }
@@ -474,9 +484,12 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
             Kind.BUTTON -> {
                 if (on("size")) p += size
                 if (on("font")) fontStr(a)?.let { p += it }
+                if (on("family") && a.fontSp != null) familyStr(a)?.let { p += it }
+                if (on("color")) colorsOf(r)?.let { p += hex(it[1]); sw = it[1] }
             }
             Kind.IMAGE -> {
                 if (on("size")) { p += size; p += ratio(r.width(), r.height()) }
+                if (on("color")) colorsOf(r)?.let { p += hex(it[1]); sw = it[1] }
             }
             Kind.CONTAINER -> if (on("size")) p += size
         }
@@ -517,7 +530,8 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
         val gm = mutableListOf<GapMark>()
         // 2. element labels
         val maxW = screen.width() - padX * 2
-        val labels = list.mapNotNull { a ->
+        val budget = annotationBudget(list)
+        val labels = budget.mapNotNull { a ->
             val (parts, sw) = labelParts(a)
             if (parts.isEmpty()) null else Label(wrap(parts, maxW, if (sw != null) swW else 0f), if (clipOf(a) != 0) 0xFFF04438.toInt() else Pal.of(a.kind), a.rect, sw)
         }.sortedWith(compareBy({ it.elem.top }, { it.elem.left }))
@@ -600,6 +614,17 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
         for (i in taken.indices) for (j in i + 1 until taken.size) if (RectF.intersects(taken[i], taken[j])) ov++
         val off = taken.count { it.left < 0 || it.top < 0 || it.right > W || it.bottom > H }
     }
+
+    private fun annotationBudget(nodes: List<NodeData>): List<NodeData> {
+        val styleMode = on("font") || on("family") || on("color") || on("radius") || on("stroke")
+        val visible = nodes.filter { (styleMode || it.structuralRepresentative) && labelParts(it).first.isNotEmpty() }
+        val limit = maxOf(10, resources.displayMetrics.heightPixels / dpForBudget())
+        // Sample before grouping: keep each measured style, including exceptions near the bottom.
+        val required = if (styleMode) fontAnnotationRepresentatives(visible) { labelParts(it) } else emptyList()
+        return (required + visible.take(limit)).distinct()
+    }
+
+    private fun dpForBudget() = dpf(80f).toInt().coerceAtLeast(1)
 
     private fun drawAnnots(c: Canvas, list: List<NodeData>, W: Float, H: Float) {
         val key = "${System.identityHashCode(list)}|${QaService.CHIPS.joinToString("") { if (on(it.first)) "1" else "0" }}|${shot != null}|$W|$H"
@@ -822,7 +847,10 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
                 val sh = shapeOf(r)
                 if (sh != null) radiusStr(sh, r)?.let { cells += Cell(Ic.RADIUS, it.removePrefix("R").let { v -> if (v.endsWith("全圆")) v else v + "pt" }) }
                 if (sh != null && sh[1] != 0f) cells += Cell(Ic.STROKE, strokeW(sh), sh[1].toInt())
-                if (cs != null) cells += Cell(Ic.COLOR, hex(cs[0]), cs[0])
+                if (cs != null) {
+                    val color = if (a.kind == Kind.IMAGE || a.kind == Kind.BUTTON) cs[1] else cs[0]
+                    cells += Cell(Ic.COLOR, hex(color), color)
+                }
             }
             clipStr(clipOf(a))?.let { cells.add(0, Cell(Ic.CLIP, it.removePrefix("⚠ "))) }
             footer = ""
@@ -970,24 +998,17 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
     private val codeTx = Paint(aa).apply { color = Color.WHITE; textSize = dpf(11.5f); typeface = mono }
     private val hdSub by lazy { Paint(aa).apply { color = Hdr.SUB_COLOR; textSize = Hdr.SUB_SP * d * svc.resources.configuration.fontScale } }
     private val hdTx = Paint(aa).apply { color = Hdr.TITLE_COLOR; textSize = Hdr.TITLE_SP * svc.resources.displayMetrics.scaledDensity; typeface = Typeface.create(Typeface.DEFAULT, 600, false) }
-    private val copyP = Paint(aa).apply { color = Color.parseColor("#7A7A7A"); style = Paint.Style.STROKE; strokeWidth = dpf(1.2f) }
     private val DIMROW = 0x00123456
     private fun keyName(ic: Ic) = when (ic) {
         Ic.SIZE -> "字号"; Ic.LINE -> "行高"; Ic.LETTER -> "字距"; Ic.WEIGHT -> "字重"; Ic.CODE -> "类名"; Ic.COLOR -> "颜色"
         Ic.BOX -> "尺寸"; Ic.RADIUS -> "圆角"; Ic.STROKE -> "描边"; Ic.VGAP -> "垂直"; Ic.HGAP -> "水平"; Ic.CLIP -> "裁切"
     }
-    private fun copyIcon(c: Canvas, x: Float, cy: Float) {
-        val u = dpf(1f)
-        c.drawRoundRect(x + 3 * u, cy - 5 * u, x + 11 * u, cy + 3 * u, 1.5f * u, 1.5f * u, copyP)
-        c.drawRoundRect(x, cy - 2 * u, x + 8 * u, cy + 6 * u, 1.5f * u, 1.5f * u, copyP)
-    }
-
     /** Dev Mode style inspect card: layer header, divider, key/value property rows with code-like values. */
     private fun drawCard(c: Canvas, fontLine: String?, fontDetail: String?, exact: Boolean, cells: List<Cell>, anchor: RectF, W: Float, H: Float) {
         val pad = dpf(16f); val rowH = dpf(28f); val headH = dpf(Hdr.H.toFloat()); val closeS = dpf(Hdr.CLOSE.toFloat()) // 与面板关闭按钮一致：40dp 触控区、6dp 内边距、无底、70% 白
         val w = min(dpf(264f), W - dpf(16f))
         val keyW = dpf(56f); val valX = pad + keyW
-        val valW = w - valX - pad - dpf(20f)
+        val valW = w - valX - pad
         val rows = ArrayList<Triple<String, String, Int?>>() // third: swatch color, DIMROW = dim text
         if (fontLine != null) {
             wrap(codeTx, fontLine, valW, valW).forEachIndexed { i, l -> rows += Triple(if (i == 0) "字体" else "", l, null) }
@@ -1043,12 +1064,11 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
             if (sw != null && sw != DIMROW) {
                 tmp.style = Paint.Style.FILL; tmp.color = sw
                 val r = RectF(vx, cy - 6 * u, vx + 12 * u, cy + 6 * u)
-                c.drawRoundRect(r, 2 * u, 2 * u, tmp); c.drawRoundRect(r, 2 * u, 2 * u, Paint(copyP).apply { color = Color.parseColor("#33FFFFFF"); strokeWidth = u })
+                c.drawRoundRect(r, 2 * u, 2 * u, tmp); c.drawRoundRect(r, 2 * u, 2 * u, Paint(swatchStroke).apply { color = Color.parseColor("#33FFFFFF"); strokeWidth = u })
                 vx += dpf(18f)
             }
             codeTx.color = if (sw == DIMROW) Color.parseColor("#7A7A7A") else Color.WHITE
-            c.drawText(fit(codeTx, v, left + w - pad - dpf(20f) - vx), vx, cy + dpf(4f), codeTx)
-            if (k.isNotEmpty() && sw != DIMROW) copyIcon(c, left + w - pad - dpf(11f), cy)
+            c.drawText(fit(codeTx, v, left + w - pad - vx), vx, cy + dpf(4f), codeTx)
             y += rowH
         }
         codeTx.color = Color.WHITE
