@@ -105,7 +105,8 @@ class MainActivity : Activity() {
     }
 
     private fun sectionTitle(text: String) = tv(text, 14f, HomeStyle.sectionText, 400).apply {
-        setPadding(0, dp(HomeStyle.sectionGap), 0, dp(10))
+        // 「权限」「默认显示」标题相对原位置向右移 16px
+        setPadding(8 + 16, dp(HomeStyle.sectionGap), 0, dp(10))
     }
 
     private fun hairline(inset: Int) = View(this).apply {
@@ -148,7 +149,7 @@ class MainActivity : Activity() {
         if (chevron) bar.addView(ImageView(this).apply { setImageResource(R.drawable.ic_chevron); setColorFilter(Color.parseColor("#B8B8BD")) },
             LinearLayout.LayoutParams(dp(12), dp(12)).apply { leftMargin = dp(8) })
         row.addView(bar)
-        sub?.let { row.addView(tv(it, HomeStyle.captionSp, secondary).apply {
+        sub?.let { row.addView(tv(it, 12f, secondary).apply {
             setPadding(dp(60), 0, dp(16), dp(12)); setLineSpacing(dp(2).toFloat(), 1f)
         }) }
         s.addView(row)

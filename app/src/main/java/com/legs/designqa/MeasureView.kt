@@ -17,7 +17,7 @@ object Hdr {
     const val PAD = 16          // left padding of title (dp)
     const val CLOSE = 40        // close touch target (dp)
     const val CLOSE_INSET = 15  // close icon inset -> 10dp X
-    const val CLOSE_CIRCLE = 20 // visible circle (dp)
+    const val CLOSE_CIRCLE = 28 // visible circle (dp)
     val CLOSE_BG = Color.parseColor("#14FFFFFF")
     const val CLOSE_RIGHT = 10  // close button right edge to container edge (dp)
     const val CLOSE_ALPHA = 1f
@@ -1006,7 +1006,7 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
     /** Dev Mode style inspect card: layer header, divider, key/value property rows with code-like values. */
     private fun drawCard(c: Canvas, fontLine: String?, fontDetail: String?, exact: Boolean, cells: List<Cell>, anchor: RectF, W: Float, H: Float) {
         val pad = dpf(16f); val rowH = dpf(28f); val headH = dpf(Hdr.H.toFloat()); val closeS = dpf(Hdr.CLOSE.toFloat()) // 与面板关闭按钮一致：40dp 触控区、6dp 内边距、无底、70% 白
-        val w = min(dpf(264f), W - dpf(16f))
+        val w = min(dpf(248f), W - dpf(16f))
         val keyW = dpf(56f); val valX = pad + keyW
         val valW = w - valX - pad
         val rows = ArrayList<Triple<String, String, Int?>>() // third: swatch color, DIMROW = dim text

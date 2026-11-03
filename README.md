@@ -6,7 +6,7 @@ Android 设计验收工具：在真机上叠加标注，检查尺寸、间距、
 
 悬浮球 · 元素检查 · 全屏标注
 
-当前版本：**2.0**（versionCode 26）。已发布安装包见 [GitHub Releases](https://github.com/ZhaoLegs/DesignQA/releases)。
+当前版本：**2.0**（versionCode 28）。已发布安装包见 [GitHub Releases](https://github.com/ZhaoLegs/DesignQA/releases)。
 
 ---
 
@@ -80,7 +80,7 @@ Android design QA overlay: inspect sizes, spacing, fonts, colors, and corner rad
 
 Floating button · element inspection · full-screen annotation
 
-Current version: **2.0** (versionCode 26). Installable builds are on [GitHub Releases](https://github.com/ZhaoLegs/DesignQA/releases).
+Current version: **2.0** (versionCode 28). Installable builds are on [GitHub Releases](https://github.com/ZhaoLegs/DesignQA/releases).
 
 ## Features
 

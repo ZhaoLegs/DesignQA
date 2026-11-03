@@ -1,6 +1,7 @@
 package com.legs.specsample
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -15,6 +16,14 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(24f).toInt(), dp(48f).toInt(), dp(24f).toInt(), dp(24f).toInt()) }
+        col.addView(TextView(this).apply {
+            text = "打开「今天日期」页面 →"
+            textSize = 16f
+            setTextColor(Color.parseColor("#007AFF"))
+            typeface = Typeface.create(Typeface.DEFAULT, 600, false)
+            setPadding(0, 0, 0, dp(16f).toInt())
+            setOnClickListener { startActivity(Intent(this@MainActivity, DateActivity::class.java)) }
+        })
         fun add(label: String, block: TextView.() -> Unit) = col.addView(TextView(this).apply {
             text = label; textSize = 20f; setTextColor(Color.parseColor("#1C1C1E")); setPadding(0, dp(10f).toInt(), 0, dp(10f).toInt()); block()
         })

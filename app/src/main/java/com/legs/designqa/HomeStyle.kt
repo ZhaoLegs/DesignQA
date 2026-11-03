@@ -23,7 +23,7 @@ internal object HomeStyle {
     val toggleOff = Color.parseColor("#F1F1F5")
 
     const val titleSp = 34f
-    const val rowSp = 17f
+    const val rowSp = 16f
     const val bodySp = 15f
     const val captionSp = 13f
     const val groupRadius = 24
