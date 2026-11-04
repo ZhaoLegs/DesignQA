@@ -31,3 +31,8 @@ screenshots/
 artifacts/
 *.aar
 .agents/
+
+# Signing material must never be committed
+*.jks
+*.keystore
+keystore.properties
