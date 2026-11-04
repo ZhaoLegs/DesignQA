@@ -109,8 +109,8 @@ class QaService : AccessibilityService() {
     }
     private val semibold by lazy { android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, 600, false) }
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
-    /** Panel width: 272dp or 75% of the screen, whichever is smaller. */
-    private fun panelW() = minOf(dp(272), (resources.displayMetrics.widthPixels * 0.75f).toInt())
+    /** Panel / info-card shared width: 248dp or 75% of the screen, whichever is smaller. */
+    private fun panelW() = minOf(dp(248), (resources.displayMetrics.widthPixels * 0.75f).toInt())
     fun isOn(k: String): Boolean = annotationPrefs.read().isOn(k)
 
     override fun onServiceConnected() {
@@ -435,9 +435,6 @@ class QaService : AccessibilityService() {
         }
         header.addView(TextView(this).apply {
             text = "Spec"; textSize = Hdr.TITLE_SP; setTextColor(Hdr.TITLE_COLOR); typeface = semibold; includeFontPadding = false
-        })
-        header.addView(TextView(this).apply {
-            text = "设计走查 · v" + (runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: ""); textSize = Hdr.SUB_SP; setTextColor(Hdr.SUB_COLOR); setPadding(dp(Hdr.SUB_GAP), 0, 0, 0); includeFontPadding = false
         })
         header.addView(TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(0, 1, 1f)

@@ -4,19 +4,178 @@ import android.app.Activity
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.util.TypedValue
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewConfiguration
+import android.view.animation.AnimationUtils
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.ViewFlipper
+import kotlin.math.abs
 
+/**
+ * Spec Sample: full-page left/right swipe between three pages —
+ * (0) 字重与样式, (1) 今天日期, (2) 中文倾斜.
+ * No top title chrome / tabs; swipe alone is the switcher.
+ */
 class MainActivity : Activity() {
     private fun dp(v: Float) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics)
+    private fun dpi(v: Float) = dp(v).toInt()
+
+    private lateinit var flipper: ViewFlipper
+    /** When false (SeekBar scrubbing), ignore page flings. */
+    @JvmField var pageSwipeEnabled = true
+
+    private var swipeStartX = 0f
+    private var swipeStartY = 0f
+    private var swipeTracking = false
+    private var swipeTriggered = false
+    private var touchSlop = 0
+    private var swipeMinDx = 0f
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(24f).toInt(), dp(48f).toInt(), dp(24f).toInt(), dp(24f).toInt()) }
+        window.statusBarColor = Color.WHITE
+        touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        swipeMinDx = dp(64f)
+
+        // No top title / 「今天日期」 chrome — content is full-bleed
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(Color.WHITE)
+            setPadding(0, dpi(24f), 0, 0)
+        }
+
+        flipper = ViewFlipper(this).apply {
+            layoutParams = FrameLayout.LayoutParams(-1, -1)
+            // Instant switch — fade can race with dumps / look like swipe failed
+            inAnimation = null
+            outAnimation = null
+        }
+
+        // Three pages: styles | date | italic
+        flipper.addView(wrapScroll(pageStyles()))
+        flipper.addView(buildDatePage()) // FrameLayout overlay; do NOT wrap in ScrollView
+        flipper.addView(wrapScroll(pageItalic()))
+        root.addView(flipper)
+
+        val start = intent.getIntExtra("page", 0).coerceIn(0, flipper.childCount - 1)
+        flipper.displayedChild = start
+        markPage()
+        setContentView(root)
+    }
+
+    private fun markPage() {
+        // Machine-readable page marker for adb dumps (not a visible title)
+        flipper.contentDescription = "spec_page_${flipper.displayedChild}"
+        title = "spec_page_${flipper.displayedChild}"
+    }
+
+    /**
+     * Whole-page horizontal swipe via Activity dispatch — fires even when
+     * ScrollView / panel children consume or CANCEL the stream.
+     * Flip on MOVE once threshold hit (do not wait for UP).
+     * SeekBar sets pageSwipeEnabled=false while scrubbing.
+     */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                swipeStartX = ev.rawX
+                swipeStartY = ev.rawY
+                swipeTracking = pageSwipeEnabled
+                swipeTriggered = false
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                // Multi-touch: abort page swipe
+                swipeTracking = false
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!pageSwipeEnabled) {
+                    swipeTracking = false
+                } else if (swipeTracking && !swipeTriggered) {
+                    val dx = ev.rawX - swipeStartX
+                    val dy = ev.rawY - swipeStartY
+                    if (abs(dx) >= swipeMinDx && abs(dx) > abs(dy) * 1.15f) {
+                        swipeTriggered = true
+                        if (dx < 0f) showNext() else showPrev()
+                    }
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                // Fallback: if MOVE never crossed threshold but UP has a clear horizontal delta
+                if (swipeTracking && pageSwipeEnabled && !swipeTriggered) {
+                    val dx = ev.rawX - swipeStartX
+                    val dy = ev.rawY - swipeStartY
+                    if (abs(dx) >= swipeMinDx && abs(dx) > abs(dy) * 1.15f) {
+                        swipeTriggered = true
+                        if (dx < 0f) showNext() else showPrev()
+                    }
+                }
+                swipeTracking = false
+            }
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
+    private fun showNext() {
+        if (!::flipper.isInitialized) return
+        if (flipper.displayedChild >= flipper.childCount - 1) return
+        flipper.displayedChild = flipper.displayedChild + 1
+        markPage()
+    }
+
+    private fun showPrev() {
+        if (!::flipper.isInitialized) return
+        if (flipper.displayedChild <= 0) return
+        flipper.displayedChild = flipper.displayedChild - 1
+        markPage()
+    }
+
+    /** ScrollView: do not intercept clearly-horizontal moves. */
+    private fun wrapScroll(content: View) = object : ScrollView(this) {
+        private var startX = 0f
+        private var startY = 0f
+
+        override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    startX = ev.x
+                    startY = ev.y
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = abs(ev.x - startX)
+                    val dy = abs(ev.y - startY)
+                    if (dx > dy && dx > touchSlop) {
+                        return false
+                    }
+                }
+            }
+            return try {
+                super.onInterceptTouchEvent(ev)
+            } catch (_: Exception) {
+                false
+            }
+        }
+    }.apply {
+        addView(content)
+        isFillViewport = true
+        setBackgroundColor(Color.WHITE)
+        overScrollMode = View.OVER_SCROLL_NEVER
+    }
+
+    private fun pageStyles(): LinearLayout {
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dpi(24f), dpi(16f), dpi(24f), dpi(40f))
+        }
         fun add(label: String, block: TextView.() -> Unit) = col.addView(TextView(this).apply {
-            text = label; textSize = 20f; setTextColor(Color.parseColor("#1C1C1E")); setPadding(0, dp(10f).toInt(), 0, dp(10f).toInt()); block()
+            text = label; textSize = 20f; setTextColor(Color.parseColor("#1C1C1E"))
+            setPadding(0, dpi(10f), 0, dpi(10f)); block()
         })
         add("Spec Sample 字重 300 Light") { typeface = Typeface.create(Typeface.DEFAULT, 300, false) }
         add("Spec Sample 字重 400 Regular") { typeface = Typeface.create(Typeface.DEFAULT, 400, false) }
@@ -25,118 +184,55 @@ class MainActivity : Activity() {
         add("Spec Sample 字重 700 Bold") { typeface = Typeface.create(Typeface.DEFAULT, 700, false) }
         add("textStyle=bold（400→700）") { setTypeface(null, Typeface.BOLD) }
         add("Letter spacing 0.1em") { letterSpacing = 0.1f; textSize = 16f }
-        add("行高 32dp 的多行文本示例，第二行用于验证行高测量是否准确。") { textSize = 15f; lineHeight = dp(32f).toInt() }
+        add("行高 32dp 的多行文本示例，第二行用于验证行高测量是否准确。") { textSize = 15f; lineHeight = dpi(32f) }
         add("serif 衬线 600") { typeface = Typeface.create(Typeface.create("serif", Typeface.NORMAL), 600, false); textSize = 18f }
         add("按钮 圆角 12 描边 2") {
-            textSize = 16f; setTextColor(Color.WHITE); setPadding(dp(20f).toInt(), dp(12f).toInt(), dp(20f).toInt(), dp(12f).toInt())
-            background = GradientDrawable().apply { setColor(Color.parseColor("#007AFF")); cornerRadius = dp(12f); setStroke(dp(2f).toInt(), Color.parseColor("#FF2D55")) }
+            textSize = 16f; setTextColor(Color.WHITE)
+            setPadding(dpi(20f), dpi(12f), dpi(20f), dpi(12f))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#007AFF")); cornerRadius = dp(12f)
+                setStroke(dpi(2f), Color.parseColor("#FF2D55"))
+            }
         }
-        // 描边测试：1px 细线描边按钮 + 1px 分隔线（宽/高 = 1 物理像素）
-        add("细线描边 1px #E5E5E5") {
-            textSize = 16f; setPadding(dp(20f).toInt(), dp(12f).toInt(), dp(20f).toInt(), dp(12f).toInt())
-            background = GradientDrawable().apply { setColor(Color.WHITE); cornerRadius = dp(8f); setStroke(1, Color.parseColor("#E5E5E5")) }
-        }
-        col.addView(android.view.View(this).apply { setBackgroundColor(Color.parseColor("#E5E5E5")) }, android.widget.LinearLayout.LayoutParams(-1, 1).apply { topMargin = dp(16f).toInt(); bottomMargin = dp(16f).toInt() })
-        add("分隔线上方 / 下方 1px #DDDDDD 竖线在右侧") { textSize = 14f }
-        col.addView(android.view.View(this).apply { setBackgroundColor(Color.parseColor("#DDDDDD")) }, android.widget.LinearLayout.LayoutParams(-1, 1).apply { topMargin = dp(16f).toInt(); bottomMargin = dp(40f).toInt() })
-        // 中文 + 藏文混排：裁切复现 vs 修复
-        val tib = "བཀྲ་ཤིས་བདེ་ལེགས། 扎西德勒 སྐྱིད་པོ་ 幸福 བསྟན་འཛིན་ སྒྲོལ་མ ཀྲི ཇུ"
-        add("中藏混排 ❌ 裁切 ① 单行 16sp 固定高度 20dp + includeFontPadding=false  ② 多行 固定 44dp + lineSpacing 0.8") { textSize = 13f; setTextColor(Color.parseColor("#D92D20")) }
-        col.addView(TextView(this).apply {
-            text = tib; textSize = 16f; setTextColor(Color.BLACK)
-            includeFontPadding = false; setLineSpacing(0f, 0.8f); maxLines = 1; isSingleLine = true
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            if (android.os.Build.VERSION.SDK_INT >= 28) isFallbackLineSpacing = false
-            setBackgroundColor(Color.parseColor("#FFF1F0"))
-        }, android.widget.LinearLayout.LayoutParams(-1, dp(20f).toInt()).apply { topMargin = dp(4f).toInt() })
-        col.addView(TextView(this).apply {
-            text = tib + "\n第二行 " + tib; textSize = 17f; setTextColor(Color.BLACK)
-            includeFontPadding = false; setLineSpacing(0f, 0.8f)
-            if (android.os.Build.VERSION.SDK_INT >= 28) isFallbackLineSpacing = false
-            setBackgroundColor(Color.parseColor("#FFF1F0"))
-        }, android.widget.LinearLayout.LayoutParams(-1, dp(44f).toInt()).apply { topMargin = dp(8f).toInt() })
-        add("中藏混排 ✅ 修复：wrap_content + includeFontPadding=true + fallbackLineSpacing + 行距 1.3 + 上下 padding 6dp") { textSize = 13f; setTextColor(Color.parseColor("#067647")); (this.layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.topMargin = dp(16f).toInt() }
-        col.addView(TextView(this).apply {
-            text = tib + "\n第二行 " + tib; textSize = 17f; setTextColor(Color.BLACK)
-            includeFontPadding = true; setLineSpacing(0f, 1.3f)
-            if (android.os.Build.VERSION.SDK_INT >= 28) isFallbackLineSpacing = true
-            setPadding(0, dp(6f).toInt(), 0, dp(6f).toInt())
-            setBackgroundColor(Color.parseColor("#ECFDF3"))
-        }, android.widget.LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4f).toInt(); bottomMargin = dp(60f).toInt() })
-        // 16/16 单行：字号 16 + 行高 16（dp 为主；最后一条为物理 px）
-        val zh16 = "扎西德勒 幸福安康 中文单行示例"
-        val bo16 = "བཀྲ་ཤིས་བདེ་ལེགས། སྐྱིད་པོ་ སྒྲོལ་མ ཀྲི ཇུ"
-        val mix16 = "བཀྲ་ཤིས་བདེ་ལེགས། 扎西德勒 སྐྱིད་པོ་ 幸福 སྒྲོལ་མ"
-        fun v16(label: String, txt: String, unit: Int, pad: Boolean, fixedH: Boolean) {
-            add(label) { textSize = 12f; setTextColor(Color.parseColor("#475467")); (layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.topMargin = dp(10f).toInt() }
-            val px16 = TypedValue.applyDimension(unit, 16f, resources.displayMetrics)
-            col.addView(TextView(this).apply {
-                text = txt; setTextColor(Color.BLACK); setTextSize(unit, 16f)
-                includeFontPadding = pad; isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END
-                if (android.os.Build.VERSION.SDK_INT >= 28) lineHeight = px16.toInt()
-                setBackgroundColor(Color.parseColor("#F2F4F7"))
-            }, android.widget.LinearLayout.LayoutParams(-1, if (fixedH) px16.toInt() else -2).apply { topMargin = dp(2f).toInt() })
-        }
-        val D = TypedValue.COMPLEX_UNIT_DIP
-        v16("16/16 ① 纯中文 · 16dp/行高16dp · fontPadding=false · wrap", zh16, D, false, false)
-        v16("16/16 ② 纯藏文 · 16dp/行高16dp · fontPadding=false · wrap", bo16, D, false, false)
-        v16("16/16 ③ 中藏混排 · 16dp/行高16dp · fontPadding=false · wrap", mix16, D, false, false)
-        v16("16/16 ④ 中藏混排 · 16dp/行高16dp · 固定高度16dp", mix16, D, false, true)
-        v16("16/16 ⑤ 中藏混排 · 16dp/行高16dp · fontPadding=true · wrap", mix16, D, true, false)
-        v16("16/16 ⑥ 中藏混排 · 16物理px/行高16px · 固定16px (=4.6dp)", mix16, TypedValue.COMPLEX_UNIT_PX, false, true)
-        run { val n = col.childCount; val mv = (n - 18 until n).map { col.getChildAt(it) }; mv.forEach { col.removeView(it) }; mv.forEachIndexed { i, v -> col.addView(v, i) } }
-        run { val mv = (6 until 18).map { col.getChildAt(it) }; mv.forEach { col.removeView(it) }; mv.forEachIndexed { i, v -> col.addView(v, i) } }
-        // ===== 系统级缓解示例：同样的恶劣条件（中藏混排 · 16dp 字号 · 固定高度 16dp · includeFontPadding=false · 单行）=====
-        val hostile = "བཀྲ་ཤིས་བདེ་ལེགས། 扎西德勒 སྐྱིད་པོ་ 幸福 སྒྲོལ་མ"
-        val h16 = dp(16f).toInt()
-        col.clipChildren = false
-        fun hdr(t: String, c: String) = add(t) { textSize = 12f; setTextColor(Color.parseColor(c)); (layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.topMargin = dp(12f).toInt() }
-        fun hostileTv(tf: Typeface?) = TextView(this).apply {
-            text = hostile; setTextColor(Color.BLACK); setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16f)
-            includeFontPadding = false; isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END
-            if (tf != null) typeface = tf
-            setBackgroundColor(Color.parseColor("#F2F4F7"))
-        }
-        add("【系统级缓解示例】条件同 ④：中藏混排 · 16dp · 固定高 16dp · fontPadding=false · 单行") { textSize = 14f; setTypeface(typeface, Typeface.BOLD); setTextColor(Color.BLACK); (layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.topMargin = dp(8f).toInt() }
-        hdr("A 原样（对照）：藏文上下被裁", "#D92D20")
-        col.addView(hostileTv(null), android.widget.LinearLayout.LayoutParams(-1, h16).apply { topMargin = dp(2f).toInt() })
-        hdr("B 字体层：改造藏文字体（缩至 58% + 上移，度量对齐中文）。代价：藏文明显变小、基线与中文不齐", "#067647")
-        val tfFit = runCatching {
-            val fam = android.graphics.fonts.FontFamily.Builder(android.graphics.fonts.Font.Builder(resources, R.font.tibetan_fit).build()).build()
-            Typeface.CustomFallbackBuilder(fam).setSystemFallback("sans-serif").build()
-        }.getOrNull()
-        col.addView(hostileTv(tfFit), android.widget.LinearLayout.LayoutParams(-1, h16).apply { topMargin = dp(2f).toInt() })
-        hdr("C 框架层：模拟 ROM 改 TextView——所需行高 > 固定高度时自动缩小字号。代价：整行（含中文）一起变小", "#067647")
-        col.addView(FitTextView(this, hostile, dp(16f)).apply { setBackgroundColor(Color.parseColor("#F2F4F7")) },
-            android.widget.LinearLayout.LayoutParams(-1, h16).apply { topMargin = dp(2f).toInt() })
-        hdr("D 允许绘制出界：clipChildren=false + 不裁剪绘制。代价：字形压到上下相邻元素", "#067647")
-        col.addView(NoClipTextView(this, hostile, dp(16f)).apply { setBackgroundColor(Color.parseColor("#F2F4F7")) },
-            android.widget.LinearLayout.LayoutParams(-1, h16).apply { topMargin = dp(2f).toInt(); bottomMargin = dp(16f).toInt() })
-        run { val n = col.childCount; val mv = (n - 9 until n).map { col.getChildAt(it) }; mv.forEach { col.removeView(it) }; mv.forEachIndexed { i, v -> col.addView(v, i) } }
-        setContentView(ScrollView(this).apply { addView(col); setBackgroundColor(Color.WHITE) })
+        return col
     }
-}
 
-/** 模拟 ROM 级 TextView 补丁：所需行高超过可用高度时逐步缩小字号。 */
-class FitTextView(ctx: android.content.Context, private val txt: String, private val sizePx: Float) : android.view.View(ctx) {
-    private val p = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
-    private val b = android.graphics.Rect()
-    override fun onDraw(c: android.graphics.Canvas) {
-        // 量真实字形墨迹高度（含藏文上加/下加字），超出可用高度就按比例缩小字号，再把墨迹垂直居中
-        p.textSize = sizePx; p.getTextBounds(txt, 0, txt.length, b)
-        val avail = height * 0.96f
-        if (b.height() > avail) { p.textSize = sizePx * avail / b.height(); p.getTextBounds(txt, 0, txt.length, b) }
-        val y = (height - b.height()) / 2f - b.top
-        android.util.Log.d("FitTV", "h=$height b=$b size=${p.textSize} y=$y")
-        c.drawText(txt, paddingLeft.toFloat(), y, p)
-    }
-}
-
-/** 不裁剪的文字：直接按字体度量把一行画在固定高度里，超出部分照画（父布局需 clipChildren=false）。 */
-class NoClipTextView(ctx: android.content.Context, private val txt: String, sizePx: Float) : android.view.View(ctx) {
-    private val p = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = sizePx; color = Color.BLACK }
-    override fun onDraw(c: android.graphics.Canvas) {
-        val fm = p.fontMetrics
-        c.drawText(txt, paddingLeft.toFloat(), -fm.ascent, p)
+    private fun pageItalic(): LinearLayout {
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dpi(24f), dpi(16f), dpi(24f), dpi(40f))
+        }
+        fun label(s: String) = col.addView(TextView(this).apply {
+            text = s; textSize = 13f; setTextColor(Color.parseColor("#8A8A8E"))
+            setPadding(0, dpi(16f), 0, dpi(6f))
+        })
+        fun sample(s: String, block: TextView.() -> Unit) = col.addView(TextView(this).apply {
+            text = s; textSize = 22f; setTextColor(Color.parseColor("#1C1C1E"))
+            setPadding(0, dpi(4f), 0, dpi(4f)); block()
+        })
+        label("① 正体对照")
+        sample("设计走查 字体倾斜 Spec") { typeface = Typeface.create(Typeface.DEFAULT, 400, false) }
+        label("② Typeface.ITALIC")
+        sample("设计走查 字体倾斜 Spec") { setTypeface(typeface, Typeface.ITALIC) }
+        label("③ Typeface.create(…, italic=true)")
+        sample("设计走查 字体倾斜 Spec") {
+            typeface = if (Build.VERSION.SDK_INT >= 28) Typeface.create(Typeface.DEFAULT, 400, true)
+            else Typeface.create(Typeface.DEFAULT, Typeface.ITALIC)
+        }
+        label("④ 假斜体 paint.textSkewX = -0.25")
+        sample("设计走查 字体倾斜 Spec") {
+            typeface = Typeface.create(Typeface.DEFAULT, 400, false); paint.textSkewX = -0.25f
+        }
+        label("⑤ 假斜体 + Medium 500")
+        sample("设计走查 字体倾斜 Spec") {
+            typeface = Typeface.create(Typeface.DEFAULT, 500, false); paint.textSkewX = -0.25f
+        }
+        label("⑥ 假斜体 + Bold 700")
+        sample("设计走查 字体倾斜 Spec") {
+            typeface = Typeface.create(Typeface.DEFAULT, 700, false); paint.textSkewX = -0.25f
+        }
+        label("⑦ 英文真斜体对照")
+        sample("Spec Italic Sample Design QA") { setTypeface(Typeface.SANS_SERIF, Typeface.ITALIC) }
+        return col
     }
 }
