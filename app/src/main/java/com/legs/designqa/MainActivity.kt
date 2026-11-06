@@ -52,7 +52,7 @@ class MainActivity : Activity() {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(16), dp(16), dp(32)); setBackgroundColor(bg) }
         val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         head.addView(tv("Spec", HomeStyle.titleSp, label, 700))
-        val version = tv("v" + (runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: ""), HomeStyle.captionSp, secondary, 500).apply {
+        val version = tv("V " + (runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: ""), HomeStyle.captionSp, secondary, 500).apply {
             background = rounded(Color.parseColor("#E5E5EB"), 12)
             setPadding(dp(8), dp(4), dp(8), dp(4))
         }

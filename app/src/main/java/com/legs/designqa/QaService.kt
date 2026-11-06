@@ -437,6 +437,11 @@ class QaService : AccessibilityService() {
             text = "Spec"; textSize = Hdr.TITLE_SP; setTextColor(Hdr.TITLE_COLOR); typeface = semibold; includeFontPadding = false
         })
         header.addView(TextView(this).apply {
+            val vn = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: ""
+            text = "V $vn"; textSize = 11f; setTextColor(T.TEXT); typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, 500, false); includeFontPadding = false
+            setPadding(dp(8), 0, 0, 0)
+        })
+        header.addView(TextView(this).apply {
             layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
         })
         header.addView(ImageView(this).apply {

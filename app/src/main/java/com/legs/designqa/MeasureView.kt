@@ -593,7 +593,35 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
                 }
                 found = best
             }
-            val b = found ?: continue // screen completely full
+            // Never drop a label: if the screen is packed, pick the least-overlapping slot and place anyway.
+            val b = found ?: run {
+                val cx = r.exactCenterX(); val cy = r.exactCenterY()
+                var best: RectF? = null; var bestOv = Float.MAX_VALUE; var bd = Float.MAX_VALUE
+                val st = dpf(6f)
+                var y = screen.top
+                while (y + h <= screen.bottom) {
+                    var x = screen.left
+                    while (x + w <= screen.right) {
+                        val cand = RectF(x, y, x + w, y + h)
+                        var ov = 0f
+                        for (t in taken) {
+                            val i = RectF(cand); if (!i.intersect(t)) continue
+                            ov += i.width() * i.height()
+                        }
+                        val dd = hypot(x + w / 2 - cx, y + h / 2 - cy)
+                        if (ov < bestOv - 0.5f || (abs(ov - bestOv) <= 0.5f && dd < bd)) {
+                            best = cand; bestOv = ov; bd = dd
+                        }
+                        x += st
+                    }
+                    y += st
+                }
+                best ?: RectF(
+                    (r.exactCenterX() - w / 2).coerceIn(screen.left, max(screen.left, screen.right - w)),
+                    (r.top - h - g).coerceIn(screen.top, max(screen.top, screen.bottom - h)),
+                    0f, 0f
+                ).also { it.right = it.left + w; it.bottom = it.top + h }
+            }
             lb.box = b
             val el = RectF(r)
             lb.leader = !RectF.intersects(RectF(b.left - g * 2, b.top - g * 2, b.right + g * 2, b.bottom + g * 2), el)
@@ -624,10 +652,22 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
 
     private fun annotationBudget(nodes: List<NodeData>): List<NodeData> {
         val styleMode = on("font") || on("family") || on("color") || on("radius") || on("stroke")
-        val visible = nodes.filter { (styleMode || it.structuralRepresentative) && labelParts(it).first.isNotEmpty() }
+        val sizeOn = on("size")
+        // Size mode must keep every button/clickable control — list-row de-dupe (structuralRepresentative)
+        // previously dropped most Settings/app buttons so they never got a w×h label.
+        fun keep(n: NodeData): Boolean {
+            if (labelParts(n).first.isEmpty()) return false
+            if (styleMode || n.structuralRepresentative) return true
+            return sizeOn && (n.kind == Kind.BUTTON || n.clickable)
+        }
+        val visible = nodes.filter(::keep)
         val limit = maxOf(10, resources.displayMetrics.heightPixels / dpForBudget())
-        // Sample before grouping: keep each measured style, including exceptions near the bottom.
         val required = if (styleMode) fontAnnotationRepresentatives(visible) { labelParts(it) } else emptyList()
+        if (sizeOn) {
+            val buttons = visible.filter { it.kind == Kind.BUTTON || it.clickable }
+            val rest = visible.filterNot { it.kind == Kind.BUTTON || it.clickable }.take(limit)
+            return (required + buttons + rest).distinct()
+        }
         return (required + visible.take(limit)).distinct()
     }
 
