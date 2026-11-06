@@ -194,6 +194,15 @@ class MainActivity : Activity() {
                 setStroke(dpi(2f), Color.parseColor("#FF2D55"))
             }
         }
+        add("胶囊按钮 全圆角（应不标记 R）") {
+            textSize = 16f; setTextColor(Color.WHITE)
+            setPadding(dpi(24f), dpi(12f), dpi(24f), dpi(12f))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#34C759"))
+                // half of height ≈ full pill; height ≈ 12+12 pad + ~19 text ≈ 43dp → use large radius
+                cornerRadius = dp(999f)
+            }
+        }
         return col
     }
 

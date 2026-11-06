@@ -438,8 +438,10 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
 
     private fun radiusStr(sh: FloatArray?, r: Rect): String? {
         if (sh == null || sh[0] < 0) return null
-        val full = sh[0] * d >= min(r.width(), r.height()) / 2f - 1
-        return if (full) "R≈全圆" else "R≈%.0f".format(sh[0])
+        // pill / capsule / circle: radius reaches half the short side → skip marking
+        val half = min(r.width(), r.height()) / 2f
+        if (sh[0] * d >= half - 2f) return null
+        return "R≈%.0f".format(sh[0])
     }
 
     // ---------------- full-screen annotation ----------------
