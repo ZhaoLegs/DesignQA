@@ -888,16 +888,32 @@ class QaService : AccessibilityService() {
     }
 
     private val btnRe = Regex("Button|Chip|Switch|CheckBox|RadioButton|ToggleButton|FloatingAction|Fab")
+    private val imgRe = Regex("ImageView|ImageButton|Image\$|Icon|AppCompatImage")
+
+    /** True for small roughly-square glyphs that Settings/apps use as leading icons. */
+    private fun looksLikeIcon(r: Rect): Boolean {
+        val w = r.width(); val h = r.height()
+        if (w < dp(6) || h < dp(6) || w > dp(96) || h > dp(96)) return false
+        val ratio = w.toFloat() / h.toFloat()
+        return ratio in 0.55f..1.8f
+    }
 
     fun classify(n: AccessibilityNodeInfo): Kind {
         val cls = n.className?.toString() ?: ""
         val hasText = !n.text.isNullOrBlank()
+        val r = Rect(); n.getBoundsInScreen(r)
         return when {
+            // ImageButton matches both — treat as image so size/ratio labels show
+            imgRe.containsMatchIn(cls) -> Kind.IMAGE
             btnRe.containsMatchIn(cls) -> Kind.BUTTON
             hasText -> Kind.TEXT
-            cls.contains("Image") -> Kind.IMAGE
+            cls.contains("Image", ignoreCase = true) -> Kind.IMAGE
+            !n.contentDescription.isNullOrBlank() && looksLikeIcon(r) -> Kind.IMAGE
+            !n.contentDescription.isNullOrBlank() && !n.isClickable -> Kind.IMAGE
+            n.isClickable && looksLikeIcon(r) && n.childCount == 0 -> Kind.IMAGE
             n.isClickable -> Kind.BUTTON
             !n.contentDescription.isNullOrBlank() -> Kind.IMAGE
+            looksLikeIcon(r) && n.childCount == 0 -> Kind.IMAGE
             else -> Kind.CONTAINER
         }
     }
@@ -935,8 +951,9 @@ class QaService : AccessibilityService() {
             val include = when (k) {
                 Kind.TEXT -> true
                 Kind.BUTTON -> r.width().toLong() * r.height() < sArea * 0.4 && (btnRe.containsMatchIn(cls) || r.width() < dm.widthPixels * 0.8)
-                Kind.IMAGE -> r.width() >= dp(8) && r.height() >= dp(8)
-                Kind.CONTAINER -> cls.contains("Card")
+                // icons can be as small as ~6–8dp on dense screens
+                Kind.IMAGE -> r.width() >= dp(6) && r.height() >= dp(6)
+                Kind.CONTAINER -> cls.contains("Card") || looksLikeIcon(r)
             }
             // Keep every candidate: identical geometry says nothing about color/font/radius/stroke.
             if (include) {

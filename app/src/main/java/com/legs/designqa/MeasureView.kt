@@ -653,20 +653,21 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
     private fun annotationBudget(nodes: List<NodeData>): List<NodeData> {
         val styleMode = on("font") || on("family") || on("color") || on("radius") || on("stroke")
         val sizeOn = on("size")
-        // Size mode must keep every button/clickable control — list-row de-dupe (structuralRepresentative)
-        // previously dropped most Settings/app buttons so they never got a w×h label.
+        // Size mode must keep every button AND icon — list-row de-dupe (structuralRepresentative)
+        // previously dropped most Settings/app icons so they never got a w×h label.
+        fun isControl(n: NodeData) = n.kind == Kind.BUTTON || n.kind == Kind.IMAGE || n.clickable
         fun keep(n: NodeData): Boolean {
             if (labelParts(n).first.isEmpty()) return false
             if (styleMode || n.structuralRepresentative) return true
-            return sizeOn && (n.kind == Kind.BUTTON || n.clickable)
+            return sizeOn && isControl(n)
         }
         val visible = nodes.filter(::keep)
         val limit = maxOf(10, resources.displayMetrics.heightPixels / dpForBudget())
         val required = if (styleMode) fontAnnotationRepresentatives(visible) { labelParts(it) } else emptyList()
         if (sizeOn) {
-            val buttons = visible.filter { it.kind == Kind.BUTTON || it.clickable }
-            val rest = visible.filterNot { it.kind == Kind.BUTTON || it.clickable }.take(limit)
-            return (required + buttons + rest).distinct()
+            val controls = visible.filter(::isControl)
+            val rest = visible.filterNot(::isControl).take(limit)
+            return (required + controls + rest).distinct()
         }
         return (required + visible.take(limit)).distinct()
     }
