@@ -272,15 +272,32 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
         }
         val outside = if (r.left >= 2) px(r.left - 2, r.centerY()) else if (r.top >= 2) px(r.centerX(), r.top - 2) else px(r.left, r.top)
         val shapeCol = if (hasStroke) edge else fill
-        if (cdist(shapeCol, outside) > 30) {
-            val corner = px(r.left, r.top)
-            if (cdist(corner, shapeCol) < 30) res[0] = 0f
-            else {
-                val lim = min(r.width(), r.height()) / 2
+        // Card/container radius: walk each corner diagonal from outside→fill; median of positive hits.
+        // Soft AA on light cards needs a lower contrast floor than the old single-corner check.
+        if (cdist(shapeCol, outside) > 18) {
+            val lim = min(r.width(), r.height()) / 2
+            fun cornerR(ox: Int, oy: Int, dx: Int, dy: Int): Float {
+                // start just outside the bounds so we begin on the parent background
+                val sx = ox - dx; val sy = oy - dy
+                if (cdist(px(ox, oy), shapeCol) < 22 && cdist(px(sx, sy), shapeCol) < 22) return -1f
                 var i = 0
-                while (i < lim && cdist(px(r.left + i, r.top + i), shapeCol) > 40) i++
-                res[0] = min(i * 3.414f, lim.toFloat()) / d
+                while (i < lim) {
+                    val c = px(ox + i * dx, oy + i * dy)
+                    // reached the fill (and left the outside/parent colour)
+                    if (cdist(c, shapeCol) <= 28 && cdist(c, outside) > 18) break
+                    i++
+                }
+                if (i <= 1 || i >= lim) return -1f
+                return min(i * 3.414f, lim.toFloat()) / d
             }
+            val rs = listOf(
+                cornerR(r.left, r.top, 1, 1),
+                cornerR(r.right - 1, r.top, -1, 1),
+                cornerR(r.left, r.bottom - 1, 1, -1),
+                cornerR(r.right - 1, r.bottom - 1, -1, -1)
+            ).filter { it > 0.4f }.sorted()
+            if (rs.isNotEmpty()) res[0] = rs[rs.size / 2]
+            else if (cdist(px(r.left, r.top), shapeCol) < 22) res[0] = 0f
         }
         shapeCache[Rect(r)] = res
         return res
@@ -655,7 +672,7 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
         val sizeOn = on("size")
         // Size mode must keep every button AND icon — list-row de-dupe (structuralRepresentative)
         // previously dropped most Settings/app icons so they never got a w×h label.
-        fun isControl(n: NodeData) = n.kind == Kind.BUTTON || n.kind == Kind.IMAGE || n.clickable
+        fun isControl(n: NodeData) = n.kind == Kind.BUTTON || n.kind == Kind.IMAGE || n.kind == Kind.CONTAINER || n.clickable
         fun keep(n: NodeData): Boolean {
             if (labelParts(n).first.isEmpty()) return false
             if (styleMode || n.structuralRepresentative) return true
@@ -664,7 +681,7 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
         val visible = nodes.filter(::keep)
         val limit = maxOf(10, resources.displayMetrics.heightPixels / dpForBudget())
         val required = if (styleMode) fontAnnotationRepresentatives(visible) { labelParts(it) } else emptyList()
-        if (sizeOn) {
+        if (sizeOn || on("radius")) {
             val controls = visible.filter(::isControl)
             val rest = visible.filterNot(::isControl).take(limit)
             return (required + controls + rest).distinct()

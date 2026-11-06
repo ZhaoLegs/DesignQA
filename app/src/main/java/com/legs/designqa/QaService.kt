@@ -898,6 +898,24 @@ class QaService : AccessibilityService() {
         return ratio in 0.55f..1.8f
     }
 
+    /**
+     * Background group cards (MIUI/HyperOS Settings white panels, Material CardView, etc.).
+     * Class name often is LinearLayout/FrameLayout — detect by geometry + children, not only "Card".
+     */
+    private fun looksLikeCard(n: AccessibilityNodeInfo, r: Rect, cls: String): Boolean {
+        if (cls.contains("Card", ignoreCase = true) || cls.contains("RoundCorner", ignoreCase = true)) return true
+        val id = n.viewIdResourceName.orEmpty()
+        if (id.contains("card", ignoreCase = true) || id.contains("group", ignoreCase = true) && id.contains("panel", ignoreCase = true)) return true
+        if (n.isClickable || n.childCount < 1) return false
+        val W = resources.displayMetrics.widthPixels
+        val H = resources.displayMetrics.heightPixels
+        // floating card: inset from screen edges, not a full-bleed page root
+        if (r.width() < (W * 0.62f).toInt() || r.width() > (W * 0.98f).toInt()) return false
+        if (r.height() < dp(40) || r.height() > (H * 0.78f).toInt()) return false
+        if (r.left <= dp(2) && r.right >= W - dp(2)) return false
+        return true
+    }
+
     fun classify(n: AccessibilityNodeInfo): Kind {
         val cls = n.className?.toString() ?: ""
         val hasText = !n.text.isNullOrBlank()
@@ -953,7 +971,7 @@ class QaService : AccessibilityService() {
                 Kind.BUTTON -> r.width().toLong() * r.height() < sArea * 0.4 && (btnRe.containsMatchIn(cls) || r.width() < dm.widthPixels * 0.8)
                 // icons can be as small as ~6–8dp on dense screens
                 Kind.IMAGE -> r.width() >= dp(6) && r.height() >= dp(6)
-                Kind.CONTAINER -> cls.contains("Card") || looksLikeIcon(r)
+                Kind.CONTAINER -> looksLikeCard(n, r, cls) || looksLikeIcon(r)
             }
             // Keep every candidate: identical geometry says nothing about color/font/radius/stroke.
             if (include) {
