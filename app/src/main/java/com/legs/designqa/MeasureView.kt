@@ -482,11 +482,11 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
         val size = "${toDp(r.width())}×${toDp(r.height())}"
         when (a.kind) {
             Kind.TEXT -> {
+                // pure text: no w×h size badge — keep font/family/color/clip only
                 clipStr(clipOf(a))?.let { p += it }
                 if (on("family")) familyStr(a)?.let { p += it }
                 if (on("font")) fontStr(a)?.let { p += it }
                 if (on("color") && !isAppIcon(a)) colorsOf(r)?.let { p += hex(it[1]); sw = it[1] }
-                if (on("size")) p += size
             }
             Kind.BUTTON -> {
                 if (on("size")) p += size
@@ -866,7 +866,7 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
                 if (ex.letterEm != null) cells += Cell(Ic.LETTER, if (ex.letterEm == 0f) "0" else "%.2fem · %spt".format(ex.letterEm, pxPt(ex.letterPx ?: 0f)))
                 else ex.letterPx?.let { cells += Cell(Ic.LETTER, pxPt(it) + "pt") }
                 ex.color?.let { cells += Cell(Ic.COLOR, hex(it), it) }
-                cells += size
+                // no w×h on pure text
             } else if (ex != null) {
                 title = cls
                 sub = kindName(a.kind)
@@ -887,7 +887,7 @@ class MeasureView(ctx: Context, private val svc: QaService) : View(ctx) {
                 a.lineH?.let { cells += Cell(Ic.LINE, (if (a.lineExact) "" else "≈") + ptStr(it) + "pt") }
                 a.letterSp?.let { cells += Cell(Ic.LETTER, if (abs(it) < 0.3f * d) "≈0" else "≈" + ptStr(it) + "pt") }
                 if (cs != null) cells += Cell(Ic.COLOR, hex(cs[1]), cs[1])
-                cells += size
+                // no w×h on pure text
             } else {
                 title = cls
                 sub = kindName(a.kind)
