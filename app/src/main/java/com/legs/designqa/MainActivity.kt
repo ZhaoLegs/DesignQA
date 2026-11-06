@@ -228,6 +228,7 @@ class MainActivity : Activity() {
         refresh(); refreshOverlayBtn(); refreshDisplaySwitches()
         QaService.onStateChanged = { refresh(); refreshOverlayBtn(); refreshDisplaySwitches() }
         stateHandler.post(stateRefresh)
+        UpdateChecker.maybeCheck(this)
     }
     override fun onPause() {
         stateHandler.removeCallbacks(stateRefresh)
